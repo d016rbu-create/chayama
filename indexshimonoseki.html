@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下関共創ギガマップ - 加筆リアルタイム反映プロトタイプ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Yomogi&display=swap" rel="stylesheet">
+    
+    <style>
+        /* キャンバス全体の質感（クラフト紙風） */
+        body {
+            margin: 0; padding: 0;
+            width: 100vw; height: 100vh;
+            background-color: #f4efe2;
+            background-image: radial-gradient(#e6dcbf 15%, transparent 15%), radial-gradient(#e6dcbf 15%, transparent 15%);
+            background-size: 4px 4px; background-position: 0 0, 2px 2px;
+            font-family: 'Yomogi', cursive, sans-serif;
+            overflow: hidden; position: relative;
+        }
+
+        h1 { text-align: center; color: #333; margin-top: 20px; font-size: 2rem; letter-spacing: 2px; }
+
+        /* アメーバ（地域コミュニティの枠） */
+        .ameba {
+            position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding-top: 20px; box-sizing: border-box;
+            border-radius: 48% 52% 45% 55% / 50% 45% 55% 50%; transition: all 0.5s ease;
+        }
+
+        .asset-cluster { width: 300px; height: 300px; top: 30%; left: 8%; border: 3px dashed #2b4f7c; background: rgba(43, 79, 124, 0.05); box-shadow: 0 0 25px rgba(43, 79, 124, 0.15); }
+        .player-cluster { width: 380px; height: 380px; top: 20%; left: 36%; border: 4px dashed #b7282e; background: rgba(183, 40, 46, 0.05); box-shadow: 0 0 45px rgba(183, 40, 46, 0.4); animation: pulse-welcome 3s infinite ease-in-out; }
+        .issue-cluster { width: 280px; height: 300px; top: 40%; left: 70%; border: 3px dashed #434343; background: rgba(67, 67, 67, 0.05); box-shadow: 0 0 25px rgba(67, 67, 67, 0.15); }
+
+        /* 中に入る付箋（ノード） */
+        .fusen {
+            background: #fffdf0; padding: 10px 18px; margin: 6px; font-size: 1.1rem; color: #333;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1); border-left: 5px solid; cursor: pointer; transition: transform 0.2s;
+            display: inline-block;
+        }
+        .asset-cluster .fusen { border-left-color: #2b4f7c; transform: rotate(1.5deg); }
+        .player-cluster .fusen { border-left-color: #b7282e; transform: rotate(-2deg); }
+        .issue-cluster .fusen { border-left-color: #434343; transform: rotate(1deg); }
+
+        /* 新しく追加された「要検証（未承認）」の付箋は、クラフト感あふれる薄い下書き風（点線）にする */
+        .fusen.pending {
+            border: 1px dashed #b7282e;
+            border-left: 5px solid #b7282e;
+            background: rgba(255, 253, 240, 0.6);
+            color: #777;
+            opacity: 0.8;
+        }
+
+        .fusen:hover { transform: scale(1.1) rotate(0deg); background: #fff; }
+
+        /* 右からスッと出てくる詳細・加筆パネル */
+        .side-panel {
+            position: fixed; top: 0; right: -450px;
+            width: 400px; height: 100vh;
+            background: #fffcf5; box-shadow: -5px 0 20px rgba(0,0,0,0.15);
+            border-left: 4px dashed #b7282e; padding: 30px;
+            box-sizing: border-box; transition: right 0.4s cubic-bezier(0.1, 0.7, 0.1, 1);
+            overflow-y: auto; z-index: 100;
+        }
+        .side-panel.open { right: 0; }
+        .close-btn { font-size: 1.5rem; background: none; border: none; cursor: pointer; color: #888; float: right; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 15px; font-size: 0.9rem; color: white; background: #b7282e; margin-bottom: 15px; }
+        
+        /* ボイスメモUI */
+        .voice-memo { background: #e6dcbf; padding: 15px; border-radius: 8px; border: 2px solid #c4b693; margin: 20px 0; }
+        .play-button { background: #fffdf0; border: 1px solid #999; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; }
+
+        /* ありがとう（応援）エリア */
+        .thank-zone { text-align: center; background: rgba(183, 40, 46, 0.05); padding: 15px; border: 2px dashed #b7282e; border-radius: 10px; margin-top: 25px; }
+        .thank-button { background: #b7282e; color: white; border: none; padding: 12px 25px; font-size: 1.2rem; font-family: 'Yomogi'; border-radius: 30px; cursor: pointer; box-shadow: 0 4px 0 #7e161a; }
+        .thank-button:active { transform: translateY(4px); box-shadow: none; }
+
+        /* 加筆フォーム */
+        .edit-form textarea { width: 100%; height: 80px; font-family: 'Yomogi'; background: #fffdf0; border: 1px dashed #999; padding: 10px; box-sizing: border-box; margin-top: 10px; margin-bottom: 10px; resize: none; }
+        .submit-btn { background: #2b4f7c; color: white; border: none; padding: 10px 20px; font-family: 'Yomogi'; font-size: 1rem; cursor: pointer; width: 100%; border-radius: 4px; }
+
+        @keyframes pulse-welcome {
+            0% { box-shadow: 0 0 30px rgba(183, 40, 46, 0.2); }
+            50% { box-shadow: 0 0 55px rgba(183, 40, 46, 0.5); }
+            100% { box-shadow: 0 0 30px rgba(183, 40, 46, 0.2); }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>下関中心市街地 ギガマップ</h1>
+
+    <div class="ameba asset-cluster" id="assetCluster">
+        <h3 style="color: #2b4f7c; margin-bottom: 5px;">【資源・アセット】</h3>
+        <div class="fusen" onclick="openPanel('🏠 斜面地の空き家', 'アセット', '活用可能な空き家物件。景観が良いけれど、道が狭くて工事が大変なエリアです。', 42)">🏠 斜面地の空き家</div>
+        <div class="fusen" onclick="openPanel('🥁 平家太鼓・文化', 'アセット', '地域の伝統的なお祭り。若者の参加者を募集中です。', 15)">🥁 平家太鼓・文化</div>
+    </div>
+
+    <div class="ameba player-cluster" id="playerCluster">
+        <h3 style="color: #b7282e; margin-bottom: 5px;">【実践者・プレイヤー】 🔥NOW!</h3>
+        <div class="fusen" onclick="openPanel('🛠️ ARCH（家守）', 'プレイヤー', '下関のリノベーションまちづくりを引っ張るハブ組織。', 128)">🛠️ ARCH（家守）</div>
+        <div class="fusen" onclick="openPanel('🪚 コミュニティ大工', 'プレイヤー', 'プロアマ問わず、みんなで街の拠点をDIYして作る大工集団！現在DIY真っ最中！', 256)">🪚 コミュニティ大工</div>
+    </div>
+
+    <div class="ameba issue-cluster" id="issueCluster">
+        <h3 style="color: #434343; margin-bottom: 5px;">【地域の課題】</h3>
+        <div class="fusen" onclick="openPanel('📉 人口減少・超高齢化', '課題', '中心市街地の高齢化が進んでいます。対策が必要です。', 8)">📉 人口減少・超高齢化</div>
+    </div>
+
+    <div class="side-panel" id="detailPanel">
+        <button class="close-btn" onclick="closePanel()">×</button>
+        <div class="badge" id="panelType">プレイヤー</div>
+        <h2 id="panelTitle" style="margin-top: 0; color: #333;">ここにタイトル</h2>
+        <p id="panelDesc" style="color: #555; line-height: 1.6;">ここに詳しい説明文が入ります。</p>
+
+        <div class="voice-memo">
+            <span style="font-size: 0.9rem; color: #666; display: block; margin-bottom: 5px;">🗣️ 地域の「生の声」ボイスメモ</span>
+            <button class="play-button" onclick="alert('ザザ……ボイスメモ再生中……')">▶</button>
+            <span style="font-size: 0.95rem; margin-left: 10px;" id="voiceCaption">「今週末、手ぶらで遊びにきてね〜！」</span>
+        </div>
+
+        <div class="edit-form">
+            <span style="font-size: 0.95rem; color: #333; font-weight: bold;">📝 このノードに「新しいアイデアや実践」を加筆する</span>
+            <textarea id="inputText" placeholder="例：【新拠点】夜間限定の学生シェアカフェがオープンしたよ！ などを入力…"></textarea>
+            <button class="submit-btn" onclick="addNewFusen()">このアメーバに付箋を貼る</button>
+        </div>
+
+        <div class="thank-zone">
+            <p style="margin: 0 0 10px 0; font-size: 0.95rem; color: #666;">このプロジェクトをみんなで育てよう</p>
+            <button class="thank-button" onclick="addThank()">🙏 ありがとう！ (<span id="thankCount">0</span>)</button>
+        </div>
+    </div>
+
+    <script>
+        function openPanel(title, type, description, count) {
+            document.getElementById('panelTitle').innerText = title;
+            document.getElementById('panelType').innerText = type;
+            document.getElementById('panelDesc').innerText = description;
+            document.getElementById('thankCount').innerText = count;
+            
+            const badge = document.getElementById('panelType');
+            if(type === 'アセット') badge.style.backgroundColor = '#2b4f7c';
+            else badge.style.backgroundColor = '#b7282e';
+
+            document.getElementById('detailPanel').classList.add('open');
+            if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+        }
+
+        function closePanel() {
+            document.getElementById('detailPanel').classList.remove('open');
+        }
+
+        // 🌟 新しい付箋をマップ（アメーバ）にペタッと貼る魔法（プログラム）
+        function addNewFusen() {
+            const text = document.getElementById('inputText').value;
+            if (!text.trim()) {
+                alert("何か文字を入力してくださいね！");
+                return;
+            }
+
+            // 1. 新しい付箋（HTML要素）を1から作ります
+            const newFusen = document.createElement('div');
+            
+            // さっきの「ガバナンスの盾」のアイデア通り、未承認なので「pending（下書き点線）」クラスを与えます
+            newFusen.className = 'fusen pending'; 
+            newFusen.innerText = "📝 " + text;
+            
+            // 2. 作った付箋をクリックしたときに、また詳細が見られるように設定
+            newFusen.onclick = function() {
+                openPanel("📝 " + text, 'プレイヤー', '一般の参加者によって新しく加筆された情報です。地域のモデレーターが確認すると正式な実線ノードになります。', 0);
+            };
+
+            // 3. 下関の「プレイヤーアメーバ」の箱の中に、この新しい付箋をペタッと追加（挿入）します
+            const playerCluster = document.getElementById('playerCluster');
+            playerCluster.appendChild(newFusen);
+
+            // 4. 入力欄をきれいにして、パネルを閉じます
+            document.getElementById('inputText').value = "";
+            closePanel();
+
+            // 成功した合図のハプティクス振動（トントン！）
+            if (navigator.vibrate) navigator.vibrate([40, 40]);
+            alert("マップに新しい『下書き付箋』がペタッと貼られました！画面を確認してみてください。");
+        }
+
+        function addThank() {
+            const countSpan = document.getElementById('thankCount');
+            let currentCount = parseInt(countSpan.innerText);
+            countSpan.innerText = currentCount + 1;
+            if (navigator.vibrate) navigator.vibrate([100, 100, 100]);
+        }
+    </script>
+</body>
+</html>
